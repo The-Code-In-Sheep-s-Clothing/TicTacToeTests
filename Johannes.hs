@@ -58,11 +58,13 @@ gameLoop (Just (playerturn, Playing [(board, actions)], winstates, printer)) = d
     let newboard = Playing [(cleanAction((actions!!mi) (playerturn, 1, xi, yi) board), actions)]
 
     if(checkWinstates newboard winstates == -1)
-    then putStrLn (printer newboard)
-    else putStrLn (printer (Finished (checkWinstates newboard winstates)))
+    then do
+        putStrLn (printer newboard)
+        let newstate = (Just (mod (playerturn + 1) 2, newboard, winstates, printer))
+        gameLoop newstate
+    else
+        putStrLn (printer (Finished (checkWinstates newboard winstates)))
 
-    let newstate = (Just (mod (playerturn + 1) 2, newboard, winstates, printer))
-    gameLoop newstate
     return ()
 gameLoop _ = do
     putStrLn "gameover"
