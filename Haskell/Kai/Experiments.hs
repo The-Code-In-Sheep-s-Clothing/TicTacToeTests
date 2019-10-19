@@ -177,8 +177,7 @@ connectFourRule' (s:st) = case s of
   ((_, 6), _ ) -> True
   ((x, y), _) -> if (any (sameSpot ((x, y+1), 'O')) st) then True else False
 
--- You can also do 0-player games like FSA
-rule110moves :: [Move Int Bool]
+-- You can also do 0-player games like cellular automata
 
 toBinary :: Int -> String
 toBinary 0 = "0"
