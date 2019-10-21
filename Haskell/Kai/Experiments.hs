@@ -106,56 +106,26 @@ ticTacToeRules m n = [
                  ]
 ticTacToeMoves :: Int -> Int -> [Move (Int, Int) Char]
 ticTacToeMoves u v = map (\x st -> x:st) [((x, y), c) | x <- [1..u], y <- [1..v], c <- ['X', 'O']]
--- should be sorted in the typical way
-horiz Nothing (s:st) n = horiz (Just s) st n || horiz Nothing st n
-horiz Nothing _ _      = False -- I think
-horiz _ _ 1 = True
-horiz (Just ((x, y), c)) (s@((x',y'), c'):st) n = x' == x + 1 && y == y' && c == c' && horiz (Just s) st (n-1)
-horiz _ _ _ = False
 
 
-horiz2 :: State (Int, Int) Char -> Int -> Bool
-horiz2 st n = horiz2' st n
+-- inARow :: State, Direction, Number in a row desired. Returns True or False
+inARow :: State (Int, Int) Char -> State (Int, Int) Char -> (Int, Int) -> Int -> Bool
+inARow state (s:st) d n = (inARow' state s d n) || inARow state st d n
   where
-    horiz2' _ 1 = True
-    horiz2' [] _ = False
-    horiz2' state@(((x, y), c):st') n' = ((case lookup (x+1, y) st' of
-                                  Nothing -> False
-                                  Just c' -> c' == c
-                                    && (horiz2' ([((x+1, y), c)] ++ st')) (n'-1))) || horiz2' st' n
-
-vert2 :: State (Int, Int) Char -> Int -> Bool
-vert2 st n = vert2' st n
-  where
-    vert2' _ 1 = True
-    vert2' [] _ = False
-    vert2' state@(((x, y), c):st') n' = ((case lookup (x, y+1) st' of
-                                  Nothing -> False
-                                  Just c' -> c' == c
-                                    && (vert2' ([((x, y+1), c)] ++ st')) (n'-1))) || vert2' st' n
-
-diag2 :: State (Int, Int) Char -> Int -> Bool
-diag2 st n = diag2' st n
-  where
-    diag2' _ 1 = True
-    diag2' [] _ = False
-    diag2' state@(((x, y), c):st') n' = ((case lookup (x+1, y+1) st' of
-                                  Nothing -> False
-                                  Just c' -> c' == c
-                                    && (diag2' ([((x+1, y+1), c)] ++ st')) (n'-1))) || diag2' st' n
-
--- should be sorted in the other way
-vert Nothing (s:st) n = vert (Just s) st n || vert Nothing st n
-vert Nothing _ _      = False -- I think
-vert _ _ 1 = True
-vert (Just ((x, y), c)) (s@((x',y'), c'):st) n = x' == x && y + 1 == y' && c == c' && vert (Just s) st (n-1)
-vert _ _ _ = False
+    inARow' :: State (Int, Int) Char -> Piece (Int, Int) Char -> (Int, Int) -> Int -> Bool
+    inARow' _ _ _ 1 = True
+    inARow' st ((x, y), c) (dx, dy) n = case lookup (x+dx, y+dy) st of
+      Nothing -> False
+      Just c' -> if c == c' then inARow' state ((x+dx, y+dy), c) (dx, dy) (n-1) else False
+inARow _ _ _ _ = False
 
 ticTacToeEnd :: Int -> StatusPred (Int, Int) Char
 ticTacToeEnd k st = if (ticTacToeEnd' st) then Win else Continue
   where
     ticTacToeEnd' [] = False
-    ticTacToeEnd' st = horiz2 (sortGrid st) k || vert2 (sortGrid' st) k || diag2 (sortGrid st) k
+    ticTacToeEnd' st = foldl (||) False (map (\d -> inARow st st d k) [(1,0), (0,1), (1,1)])
+
+
 ticTacToe :: Int -> Int -> Int -> Game (Int, Int) Char
 ticTacToe m n k  = (start, moves, pred)
   where
@@ -200,22 +170,6 @@ ruleN n (p@(x,y):st') st = case (lookup (x-1) st, Just y, lookup (x+1) st) of
 
 ruleN _ st' st = st'
 
--- Only one move. Rule110 is a zero player game and is thus deterministic.
-rule110Move (p@(x, y):st') st = case (lookup (x-1) st, Just y, lookup (x+1) st) of
-  (Just False, Just False, Just False) -> (x,False):rule110Move st' st
-  (Just True, Just False, Just False) -> (x,False):rule110Move st' st
-  (Just True, Just True, Just True) -> (x,False):rule110Move st' st
-  (Just False, Just True, Just False) -> (x, True):rule110Move st' st
-  (Just False, Just False, Just True) -> (x, True):rule110Move st' st
-  otherwise -> rule110Move st' st
-
- 
-rule110Move [] _ = []
-
-rule110moves = [
-  \state -> rule110Move state state
-               ]
-
 rule :: Int -> Game Int Bool
 rule n = (start, moves, pred)
   where
@@ -253,6 +207,7 @@ displayStrip [] = ""
 
 playGame :: (Show a, Show b) => Game a b -> (State a b -> String) -> IO ()
 playGame (s, m, f) sh = do
+  putStrLn $ show s
   putStrLn $ "State: " ++ "\n" ++  sh s
   putStrLn $ "Moves" ++ "\n" ++ (intercalate "\n\n\n\n" $ map sh (m s))
   move <- getLine
