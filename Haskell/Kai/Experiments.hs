@@ -14,7 +14,7 @@ type Move a b = (State a b -> State a b)
 type StatusPred a b = State a b -> Status
 
 -- A game is always in one of these states:
-data Status = Win | Loss | Stalemate | Continue | Invalid
+data Status = Win | Loss | Stalemate | Continue | Invalid | Ended
   deriving Show
 
 -- A successor function is all the possible moves glued together, with all the illegal states removed.
@@ -84,28 +84,32 @@ data MoveStmt = AddP Char
 data PredStmt = InARow Int | SameSpot (Int, Int) | Forever | NoSameSpot | BoardSize Int Int
 
 evalMove (AddP c) st = \(x,y) -> ((x,y), c):st
-
-evalStmts :: [GameStmt] -> (GridState, [PredStmt]) -> IO (GridState, [PredStmt])
+-- Should use monad tranformers, yikes (Either would be the main one. Non "Continue" statues fail upwards.)
+evalStmts :: [GameStmt] -> (GridState, [PredStmt], Status) -> IO (GridState, [PredStmt], Status)
 evalStmts (s:ss) st = evalGame s st >>= evalStmts ss
 evalStmts [] st = return (st)
 
-evalGame :: GameStmt -> (GridState, [PredStmt]) -> IO (GridState, [PredStmt])
+
+evalGame :: GameStmt -> (GridState, [PredStmt], Status) -> IO (GridState, [PredStmt], Status)
+evalGame _ (_, _, Ended) = return ([], [], Ended)
+evalGame _ (_, _, Win) = (putStrLn "You Win!") >> return ([], [], Ended)
+
 evalGame h@(Loop gs) st = evalGame gs st >>= evalGame h
 
 evalGame (Seq s1 s2) st = evalGame s1 st >>= evalGame s2
 
-evalGame (CheckStatus p s) (st, r) = if (evalPred p st) then (putStrLn . show) s >> (return $ ([], r)) else (return (st, r))
-evalGame (Rule ps gs) (st, r) = evalGame gs (st, r ++ ps)
+evalGame (CheckStatus p s) (st, r, s') = if (evalPred p st) then  return $ ([], [], s) else return $ (st, r, s')
+evalGame (Rule ps gs) (st, r, s) = evalGame gs (st, r ++ ps, s)
 
-evalGame (DoMove m) (st, r) = do
+evalGame (DoMove m) (st, r, s') = do
   putStrLn $ printGrid (3,3) (sortGrid' st)
   line <- getLine
   p <- return $ (read line :: (Int, Int))
   st' <- return $ evalMove m st p
-  if allTrue st' (map evalPred r) then return $ (st', r)
-  else (putStrLn "You can't do that!") >> evalGame (DoMove m) (st, r)
+  if allTrue st' (map evalPred r) then return $ (st', r, s')
+  else (putStrLn "You can't do that!") >> evalGame (DoMove m) (st, r, s')
 
-play game = evalGame game ([], [])
+play game = evalGame game ([], [], Continue)
 
 evalPred (InARow i) = \st -> inARow st st (1,0) i || inARow st st (1,1) i ||  inARow st st (0,1) i
 evalPred (Forever) = const False
