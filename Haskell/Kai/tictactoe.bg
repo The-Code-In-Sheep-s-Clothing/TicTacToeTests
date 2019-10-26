@@ -1,0 +1,9 @@
+rules:
+boardsize 3 3
+samespot
+on
+loop
+place X;
+check row 3 win;
+place O;
+check row 3 win
