@@ -1,7 +1,6 @@
 module Experiments where
 import Data.Maybe
 import Data.List
-
 -- The state is a bunch of ordered pairs.
 type State a b = [(a, b)]
 
@@ -15,7 +14,7 @@ type Move a b = (State a b -> State a b)
 type StatusPred a b = State a b -> Status
 
 -- A game is always in one of these states:
-data Status = Win | Loss | Stalemate | Continue
+data Status = Win | Loss | Stalemate | Continue | Invalid
   deriving Show
 
 -- A successor function is all the possible moves glued together, with all the illegal states removed.
@@ -30,6 +29,10 @@ type Rule a b = State a b -> Bool
 -- Lifting and to function types
 liftAnd :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 liftAnd f g = \x -> f x && g x
+
+allTrue :: a -> [(a -> Bool)] -> Bool
+allTrue x (p:ps) = (p x) && allTrue x ps
+allTrue x [] = True
 
 -- Combine all rules into a single rule: if any rule fails, it should return false.
 allRules :: [Rule a b] -> Rule a b
@@ -63,6 +66,79 @@ nim = (start, moves, pred)
 
 
 
+
+
+
+
+
+-- Board, Input
+type GridState = [((Int,Int), Char)]
+type Title = String
+type Description = String
+data GridG = Game Title Description GameStmt
+
+data GameStmt = Seq GameStmt GameStmt | DoMove MoveStmt | Loop GameStmt | CheckStatus PredStmt Status | Rule [PredStmt] GameStmt
+
+data MoveStmt = AddP Char
+
+data PredStmt = InARow Int | SameSpot (Int, Int) | Forever | NoSameSpot | BoardSize Int Int
+
+evalMove (AddP c) st = \(x,y) -> ((x,y), c):st
+
+evalStmts :: [GameStmt] -> (GridState, [PredStmt]) -> IO (GridState, [PredStmt])
+evalStmts (s:ss) st = evalGame s st >>= evalStmts ss
+evalStmts [] st = return (st)
+
+evalGame :: GameStmt -> (GridState, [PredStmt]) -> IO (GridState, [PredStmt])
+evalGame h@(Loop gs) st = evalGame gs st >>= evalGame h
+
+evalGame (Seq s1 s2) st = evalGame s1 st >>= evalGame s2
+
+evalGame (CheckStatus p s) (st, r) = if (evalPred p st) then (putStrLn . show) s >> (return $ ([], r)) else (return (st, r))
+evalGame (Rule ps gs) (st, r) = evalGame gs (st, r ++ ps)
+
+evalGame (DoMove m) (st, r) = do
+  putStrLn $ printGrid (3,3) (sortGrid' st)
+  line <- getLine
+  p <- return $ (read line :: (Int, Int))
+  st' <- return $ evalMove m st p
+  if allTrue st' (map evalPred r) then return $ (st', r)
+  else (putStrLn "You can't do that!") >> evalGame (DoMove m) (st, r)
+
+play game = evalGame game ([], [])
+
+
+evalPred (InARow i) = \st -> inARow st st (1,0) i || inARow st st (1,1) i ||  inARow st st (0,1) i
+evalPred (Forever) = const False
+evalPred (NoSameSpot) = boardOK
+evalPred (BoardSize n m) = not . notOffBoardAny n m
+
+tictactoe = Rule [NoSameSpot, BoardSize 3 3]
+    (Loop (Seq
+          (DoMove (AddP 'X'))
+           (Seq
+            (CheckStatus (InARow 3) (Win))
+             (Seq
+              (DoMove (AddP 'O'))
+              (CheckStatus (InARow 3) (Win))))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- mnk in a row games
 
 -- check for same index. should just use `on` instead of this function
@@ -70,7 +146,7 @@ sameIndex :: Eq a => Piece a b -> Piece a b -> Bool
 sameIndex (i, _) (i', _) = i == i'
 
 -- check for same spot
-sameSpot :: Piece (Int, Int) Char -> Piece (Int, Int) Char -> Bool
+sameSpot :: Piece (Int, Int) b -> Piece (Int, Int) b -> Bool
 sameSpot ((x, y), _) ((u, v), _) = x == u && y == v
 
 -- Pieces can't be off board.
