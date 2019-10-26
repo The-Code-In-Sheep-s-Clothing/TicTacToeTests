@@ -107,12 +107,13 @@ evalGame (DoMove m) (st, r) = do
 
 play game = evalGame game ([], [])
 
-
 evalPred (InARow i) = \st -> inARow st st (1,0) i || inARow st st (1,1) i ||  inARow st st (0,1) i
 evalPred (Forever) = const False
 evalPred (NoSameSpot) = boardOK
 evalPred (BoardSize n m) = not . notOffBoardAny n m
 
+
+-- TicTacToe
 tictactoe = Rule [NoSameSpot, BoardSize 3 3]
     (Loop (Seq
           (DoMove (AddP 'X'))
