@@ -24,12 +24,11 @@ type GridState = [((Int,Int), Char)]
 
 parseSeq :: Parser (GameStmt -> GameStmt -> GameStmt)
 parseSeq = do
-  spaces
-  char ';'
-  spaces
+  optional spaces
+  (char ';')
+  optional spaces
+  optional $ string "\n"
   return Seq
-
-
 
 gameParse :: Parser GameStmt
 gameParse =      gameParse' `chainl1` (parseSeq)
@@ -44,6 +43,7 @@ gameParse' = do
         try $ string "loop"
         spaces
         game <- gameParse
+        optional $ char '\n'
         return $ Loop game
   <|>
   do
@@ -52,6 +52,7 @@ gameParse' = do
         predicate <- parsePred
         spaces
         status <- parseStatus
+        optional $ char '\n'
         return $ CheckStatus predicate status
   <|>
   do
@@ -61,11 +62,12 @@ gameParse' = do
     spaces
     string "on"
     spaces
+    optional $ char '\n'
     game <- gameParse
     return $ Rule rs game
 
 parseStatus =
-  return $ Continue
+  (string "win" *> pure Win) <|> (string "lose" *> pure Loss)
 parsePred = do
   string "samespot"
   spaces
@@ -77,14 +79,14 @@ parsePred = do
         m <- many1 digit
         spaces
         n <- many1 digit
-        spaces
+        optional spaces
         return $ BoardSize (read m) (read n)
   <|>
   do
     string "row"
     spaces
     i <- many1 digit
-    spaces
+    optional spaces
     return $ InARow (read i)
 
 moveParse = do
@@ -205,4 +207,8 @@ allTrue x (p:ps) = (p x) && allTrue x ps
 allTrue x [] = True
 -- all ($ x) y if u wanna be cool.
 
-
+playFile :: String -> IO ()
+playFile file = do
+  code <- readFile file
+  playstr code
+  return ()
