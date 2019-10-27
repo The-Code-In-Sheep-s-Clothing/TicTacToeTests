@@ -91,7 +91,8 @@ evalStmts [] st = return (st)
 
 evalGame :: GameStmt -> (GridState, [PredStmt], Status) -> IO (GridState, [PredStmt], Status)
 evalGame _ (_, _, Ended) = return ([], [], Ended)
-evalGame _ (_, _, Win) = (putStrLn "You Win!") >> return ([], [], Ended)
+evalGame _ (s, _, Win) = (putStrLn (printGrid (3,3) s)) >> (putStrLn "You Win!") >> return ([], [], Ended)
+evalGame _ (s, _, Loss) = (putStrLn (printGrid (3,3) s)) >> (putStrLn "You Lose!") >> return ([], [], Ended)
 
 evalGame h@(Loop gs) st = evalGame gs st >>= evalGame h
 
@@ -123,9 +124,14 @@ tictactoe = (Rule [Not offBoard2, SameSpot]
             ))))
 
 
-
-
-
+-- https://en.wikipedia.org/wiki/Notakto
+notakto = (Rule [Not offBoard2, SameSpot]
+          (Loop
+          (
+            Seq (DoMove (AddP 'X'))
+            (If (InARow 3) (Stat Loss) (Stat Continue))
+          )
+          ))
 
 
 play game = evalGame game ([], [], Continue)
