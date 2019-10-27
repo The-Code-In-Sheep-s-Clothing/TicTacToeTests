@@ -9,19 +9,34 @@ type GState a b = [(a, b)]
 
 -- A piece is one of these ordered pairs
 type Piece a b = (a, b)
+type Pos = (Int, Int)
 
 -- A game is always in one of these states:
 data Status = Win | Loss | Stalemate | Continue | Invalid | Ended
   deriving Show
 
-data GameStmt = Seq GameStmt GameStmt | DoMove MoveStmt | Loop GameStmt | CheckStatus PredStmt Status | Rule [PredStmt] GameStmt
+data GameStmt = Seq GameStmt GameStmt | DoMove MoveStmt | Loop GameStmt | If PredStmt GameStmt GameStmt | Rule [PredStmt] GameStmt | Stat Status
 
+-- Rule is syntax sugar.
+
+-- Note: There are two kinds of rules: ones that operate simply on the latest piece (call these non-quantified) and ones that operate on the piece and the rest of the board (quantified)
 data MoveStmt = AddP Char
 
-data PredStmt = InARow Int | SameSpot (Int, Int) | Forever | NoSameSpot | BoardSize Int Int
+data PredStmt = Gt IntStmt IntStmt | Lt IntStmt IntStmt | Equal IntStmt IntStmt | SameType PieceStmt PieceStmt | And PredStmt PredStmt | Or PredStmt PredStmt | Not PredStmt -- | AnyPiece PredStmt
+              | SameSpot | InARow Int -- Builtins
+
+data PosStmt = Newest | Explicit Pos
+
+data PieceStmt = NewestC | C Char
+
+data IntStmt = Fst PosStmt | Snd PosStmt | I Int
+
+
+
 
 type GridState = [((Int,Int), Char)]
 
+{-
 parseSeq :: Parser (GameStmt -> GameStmt -> GameStmt)
 parseSeq = do
   optional spaces
@@ -29,89 +44,45 @@ parseSeq = do
   optional spaces
   optional $ string "\n"
   return Seq
-
-gameParse :: Parser GameStmt
-gameParse =      gameParse' `chainl1` (parseSeq)
-gameParse' :: Parser GameStmt
-gameParse' = do
-  try $ string "place"
-  spaces
-  move <- moveParse
-  return $ DoMove move
-  <|>
-  do
-        try $ string "loop"
-        spaces
-        game <- gameParse
-        optional $ char '\n'
-        return $ Loop game
-  <|>
-  do
-        try $ string "check"
-        spaces
-        predicate <- parsePred
-        spaces
-        status <- parseStatus
-        optional $ char '\n'
-        return $ CheckStatus predicate status
-  <|>
-  do
-    try $ string "rules:"
-    spaces
-    rs <- many1 parsePred
-    spaces
-    string "on"
-    spaces
-    optional $ char '\n'
-    game <- gameParse
-    return $ Rule rs game
-
-parseStatus =
-  (string "win" *> pure Win) <|> (string "lose" *> pure Loss)
-parsePred = do
-  string "samespot"
-  spaces
-  return $ NoSameSpot
-  <|>
-  do
-        string "boardsize"
-        spaces
-        m <- many1 digit
-        spaces
-        n <- many1 digit
-        optional spaces
-        return $ BoardSize (read m) (read n)
-  <|>
-  do
-    string "row"
-    spaces
-    i <- many1 digit
-    optional spaces
-    return $ InARow (read i)
-
-moveParse = do
-  c <- anyChar
-  return $ AddP c
-
-strtic = "rules: \
-         \boardsize 3 3 \
-         \samespot \
-         \on \
-         \loop \
-         \place x; \
-         \place y"
-
-tictactoe = Rule [NoSameSpot, BoardSize 3 3]
-    (Loop (Seq
-          (DoMove (AddP 'X'))
-           (Seq
-            (CheckStatus (InARow 3) (Win))
-             (Seq
-              (DoMove (AddP 'O'))
-              (CheckStatus (InARow 3) (Win))))))
+-}
 
 
-evalMove (AddP c) st = \(x,y) -> ((x,y), c):st
+evalPos :: PosStmt -> GridState -> Pos
+evalPos (Newest) (((x,y), _):st) = (x,y)
+evalPos (Explicit (x,y)) _ = (x,y)
+
+evalPiece :: PieceStmt -> GridState -> Char
+evalPiece (NewestC) (s:st) = snd s
+evalPiece (C c) s = c
+
+evalInt :: IntStmt -> GridState -> Int
+evalInt (Fst p) st = fst $ (evalPos p st)
+evalInt (Snd p) st = snd $ (evalPos p st)
+evalInt (I i) st = i
+
+evalPred :: PredStmt -> GridState -> Bool
+evalPred (Gt i1 i2) st = evalInt i1 st > evalInt i2 st
+evalPred (Lt i1 i2) st = evalInt i1 st < evalInt i2 st
+evalPred (Equal i1 i2) st = evalInt i1 st == evalInt i2 st
+evalPred (And p1 p2) st = evalPred p1 st && evalPred p2 st
+evalPred (Or p1 p2) st = evalPred p1 st || evalPred p2 st
+evalPred (Not p) st = not (evalPred p st)
+evalPred (SameSpot) st = boardOK st
+evalPred (InARow n) st = (inARow st st (1,1) n) ||  (inARow st st (0,1) n) ||  (inARow st st (1,0) n)
+
+
+offBoard2 = (Or
+           (Or
+           (Gt
+           (Fst Newest) (I 3))
+           (Gt
+           (Snd Newest) (I 3)))
+           (Or
+           (Gt
+           (Fst Newest) (I 3))
+           (Gt
+           (Snd Newest) (I 3))))
+
 -- Should use monad tranformers, yikes (Either would be the main one. Non "Continue" statues fail upwards.)
 evalStmts :: [GameStmt] -> (GridState, [PredStmt], Status) -> IO (GridState, [PredStmt], Status)
 evalStmts (s:ss) st = evalGame s st >>= evalStmts ss
@@ -126,7 +97,8 @@ evalGame h@(Loop gs) st = evalGame gs st >>= evalGame h
 
 evalGame (Seq s1 s2) st = evalGame s1 st >>= evalGame s2
 
-evalGame (CheckStatus p s) (st, r, s') = if (evalPred p st) then  return $ ([], [], s) else return $ (st, r, s')
+evalGame (If p s1 s2) st@(s, _, _) = if (evalPred p s) then evalGame s1 st else evalGame s2 st
+evalGame (Stat s) (st, r, _)= return $ (st, r, s)
 evalGame (Rule ps gs) (st, r, s) = evalGame gs (st, r ++ ps, s)
 
 evalGame (DoMove m) (st, r, s') = do
@@ -137,16 +109,32 @@ evalGame (DoMove m) (st, r, s') = do
   if allTrue st' (map evalPred r) then return $ (st', r, s')
   else (putStrLn "You can't do that!") >> evalGame (DoMove m) (st, r, s')
 
+
+evalMove (AddP c) st = \(x,y) -> ((x,y), c):st
+
+
+tictactoe = (Rule [Not offBoard2, SameSpot]
+            (Loop
+            (
+              Seq (DoMove (AddP 'X'))
+              (If (InARow 3) (Stat Win)
+               (Seq (DoMove (AddP 'O'))
+               ((If (InARow 3) (Stat Win)) (Stat Continue)))
+            ))))
+
+
+
+
+
+
+
 play game = evalGame game ([], [], Continue)
+{-
 playstr prog = case parse gameParse "" prog of
   Left x -> putStrLn $ "?"  ++ show x
   Right x -> play x >> return ()
+-}
 
-
-evalPred (InARow i) = \st -> inARow st st (1,0) i || inARow st st (1,1) i ||  inARow st st (0,1) i
-evalPred (Forever) = const False
-evalPred (NoSameSpot) = boardOK
-evalPred (BoardSize n m) = not . notOffBoardAny n m
 -- mnk in a row games
 
 -- check for same index. should just use `on` instead of this function
@@ -206,9 +194,10 @@ allTrue :: a -> [(a -> Bool)] -> Bool
 allTrue x (p:ps) = (p x) && allTrue x ps
 allTrue x [] = True
 -- all ($ x) y if u wanna be cool.
-
+{-
 playFile :: String -> IO ()
 playFile file = do
   code <- readFile file
   playstr code
   return ()
+-}
