@@ -1,0 +1,33 @@
+Game(TicTacToe)
+
+Board(3,3)
+
+Player(PlayerX)
+Player(AnotherPlayer)
+
+PlayRules(
+  cant_place_on_occupied_space,
+  cant_place_off_board,
+  cant_move_pieces_once_placed
+)
+
+-- meet any of these rules, end the game with a victory
+WinRules(
+  same_piece_type_in_a_row(3)
+)
+
+-- meet any of these rules, end the game in a stalemate
+StalemateRules(
+  no_empty_spaces_left
+)
+
+-- creates a piece called 'square'
+Piece(square)
+
+Play(
+  PlayerX_Place(square),
+  CheckRules, -- checks play & win rules
+  AnotherPlayer_Place(square),
+  CheckRules, -- checks play & win rules
+  Repeat
+)
